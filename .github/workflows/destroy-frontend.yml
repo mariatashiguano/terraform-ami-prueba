@@ -1,0 +1,44 @@
+name: DESTRUIR Frontend (Curso B)
+
+on:
+  workflow_dispatch: # Botón manual
+
+jobs:
+  destroy:
+    name: 'Terraform Destroy Frontend'
+    runs-on: ubuntu-latest
+
+    # IMPORTANTE: Esto le dice al robot que entre a la carpeta frontend antes de empezar
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v1
+      with:
+        terraform_version: 1.5.0
+        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+    - name: Terraform Init
+      run: terraform init
+      env:
+        TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+        # USAMOS CREDENCIALES DEL CURSO B
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_B_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_B_SECRET_ACCESS_KEY }}
+        AWS_SESSION_TOKEN: ${{ secrets.AWS_B_SESSION_TOKEN }}
+        AWS_REGION: us-east-1
+
+    - name: Terraform Destroy
+      run: terraform destroy -auto-approve
+      env:
+        TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+        # USAMOS CREDENCIALES DEL CURSO B
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_B_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_B_SECRET_ACCESS_KEY }}
+        AWS_SESSION_TOKEN: ${{ secrets.AWS_B_SESSION_TOKEN }}
+        AWS_REGION: us-east-1
