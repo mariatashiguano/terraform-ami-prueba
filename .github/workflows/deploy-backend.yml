@@ -1,16 +1,21 @@
 name: Deploy Backend (Curso A)
 on:
   push:
-    paths: ['backend/**'] # TRIGGER
+    paths: ['backend/**'] # TRIGGER: Solo si cambia la carpeta backend
     branches: ['main']
   workflow_dispatch:
+
+# Evita que se solapen dos despliegues del backend
+concurrency:
+  group: backend-deploy
+  cancel-in-progress: true
 
 jobs:
   terraform:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./backend # IMPORTANTE
+        working-directory: ./backend # IMPORTANTE: Entrar a la carpeta
 
     steps:
     - uses: actions/checkout@v3
@@ -30,6 +35,37 @@ jobs:
     - run: terraform apply -auto-approve -var="commit_hash=${{ github.sha }}"
       env:
         TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_A_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_A_SECRET_ACCESS_KEY }}
+        AWS_SESSION_TOKEN: ${{ secrets.AWS_A_SESSION_TOKEN }}
+        AWS_REGION: us-east-1
+
+    # --- NUEVO BLOQUE DE ACTUALIZACIÓN AUTOMÁTICA ---
+    - name: Instance Refresh (Smart Wait)
+      run: |
+        echo "1. Cancelando refrescos anteriores..."
+        # Nota: El nombre del ASG en el backend/main.tf es 'asg-back'
+        aws autoscaling cancel-instance-refresh --auto-scaling-group-name asg-back || true
+        
+        echo "2. Esperando limpieza de estado..."
+        while true; do
+          STATUS=$(aws autoscaling describe-instance-refreshes \
+            --auto-scaling-group-name asg-back \
+            --query 'InstanceRefreshes[0].Status' --output text)
+            
+          echo "Estado actual: $STATUS"
+          if [ "$STATUS" == "None" ] || [ "$STATUS" == "Cancelled" ] || [ "$STATUS" == "Successful" ] || [ "$STATUS" == "Failed" ]; then
+            break
+          fi
+          sleep 5
+        done
+        
+        echo "3. Iniciando nuevo refresco..."
+        aws autoscaling start-instance-refresh \
+          --auto-scaling-group-name asg-back \
+          --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 0}'
+      env:
+        # USAMOS CREDENCIALES DEL CURSO A
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_A_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_A_SECRET_ACCESS_KEY }}
         AWS_SESSION_TOKEN: ${{ secrets.AWS_A_SESSION_TOKEN }}

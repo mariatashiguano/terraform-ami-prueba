@@ -1,16 +1,20 @@
 name: Deploy Frontend (Curso B)
 on:
   push:
-    paths: ['frontend/**'] # TRIGGER
+    paths: ['frontend/**']
     branches: ['main']
   workflow_dispatch:
+
+concurrency:
+  group: frontend-deploy
+  cancel-in-progress: true
 
 jobs:
   terraform:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./frontend # IMPORTANTE
+        working-directory: ./frontend # SITUARSE EN FRONTEND
 
     steps:
     - uses: actions/checkout@v3
@@ -21,7 +25,6 @@ jobs:
     - run: terraform init
       env:
         TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-        # CREDENCIALES B
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_B_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_B_SECRET_ACCESS_KEY }}
         AWS_SESSION_TOKEN: ${{ secrets.AWS_B_SESSION_TOKEN }}
@@ -30,6 +33,37 @@ jobs:
     - run: terraform apply -auto-approve -var="commit_hash=${{ github.sha }}"
       env:
         TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_B_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_B_SECRET_ACCESS_KEY }}
+        AWS_SESSION_TOKEN: ${{ secrets.AWS_B_SESSION_TOKEN }}
+        AWS_REGION: us-east-1
+
+    # --- AGREGAMOS EL PASO QUE FALTABA (ADAPTADO AL CURSO B) ---
+    - name: Instance Refresh (Smart Wait)
+      run: |
+        echo "1. Cancelando refrescos anteriores..."
+        # OJO: Aquí usamos el nombre del ASG del Frontend: "asg-front"
+        aws autoscaling cancel-instance-refresh --auto-scaling-group-name asg-front || true
+        
+        echo "2. Esperando limpieza de estado..."
+        while true; do
+          STATUS=$(aws autoscaling describe-instance-refreshes \
+            --auto-scaling-group-name asg-front \
+            --query 'InstanceRefreshes[0].Status' --output text)
+            
+          echo "Estado actual: $STATUS"
+          if [ "$STATUS" == "None" ] || [ "$STATUS" == "Cancelled" ] || [ "$STATUS" == "Successful" ] || [ "$STATUS" == "Failed" ]; then
+            break
+          fi
+          sleep 5
+        done
+        
+        echo "3. Iniciando nuevo refresco..."
+        aws autoscaling start-instance-refresh \
+          --auto-scaling-group-name asg-front \
+          --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 0}'
+      env:
+        # IMPORTANTE: USAR CREDENCIALES DEL CURSO B
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_B_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_B_SECRET_ACCESS_KEY }}
         AWS_SESSION_TOKEN: ${{ secrets.AWS_B_SESSION_TOKEN }}
